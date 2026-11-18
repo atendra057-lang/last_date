@@ -69,13 +69,13 @@ export default function Home() {
   const [activeIndex, setActiveIndex] = useState(0);
   const reelRefs = useRef([]);
   const feedContainerRef = useRef(null);
-  const isFeedScrolling = useRef(false);
-  const feedAccumulator = useRef(0);
-  const feedTimeout = useRef(null);
-  const touchStartY = useRef(0);
+  const lastScrollTop = useRef(0);
+  const scrollDirection = useRef(0);
+  const settleTimer = useRef(null);
+  const isAutoSettling = useRef(false);
   const activeReel = REELS.find((r) => r.id === activeReasonId);
 
-  // IntersectionObserver — play only when reel is ≥70% visible
+  // IntersectionObserver — play only when reel is ≥55% visible
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -86,96 +86,58 @@ export default function Home() {
           }
         });
       },
-      { threshold: 0.6 }
+      { threshold: 0.55 }
     );
     reelRefs.current.forEach((el) => { if (el) observer.observe(el); });
     return () => observer.disconnect();
   }, []);
 
-  // Effortless magnetic wheel scrolling for Chrome: single flick glides to next reel
-  const handleFeedWheel = useCallback((e) => {
-    if (fullscreenReel) return;
-    if (isFeedScrolling.current) return;
+  // Subtle Instagram-style settled magnetism:
+  // 100% native butter-smooth scrolling while wheel/trackpad is active;
+  // gently aligns ONLY when resting very close to a post header after scroll stops.
+  const handleFeedScroll = useCallback(() => {
+    const container = feedContainerRef.current;
+    if (!container || fullscreenReel) return;
 
-    feedAccumulator.current += e.deltaY;
-    clearTimeout(feedTimeout.current);
-    feedTimeout.current = setTimeout(() => {
-      feedAccumulator.current = 0;
-    }, 140);
-
-    const THRESHOLD = 16;
-    if (feedAccumulator.current > THRESHOLD) {
-      if (activeIndex < REELS.length - 1) {
-        isFeedScrolling.current = true;
-        feedAccumulator.current = 0;
-        const nextIdx = activeIndex + 1;
-        setActiveIndex(nextIdx);
-        reelRefs.current[nextIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
-        setTimeout(() => { isFeedScrolling.current = false; }, 380);
-      }
-    } else if (feedAccumulator.current < -THRESHOLD) {
-      if (activeIndex > 0) {
-        isFeedScrolling.current = true;
-        feedAccumulator.current = 0;
-        const prevIdx = activeIndex - 1;
-        setActiveIndex(prevIdx);
-        reelRefs.current[prevIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
-        setTimeout(() => { isFeedScrolling.current = false; }, 380);
-      }
+    const currentTop = container.scrollTop;
+    const delta = currentTop - lastScrollTop.current;
+    if (Math.abs(delta) > 1) {
+      scrollDirection.current = delta > 0 ? 1 : -1;
     }
-  }, [activeIndex, fullscreenReel]);
+    lastScrollTop.current = currentTop;
 
-  // Effortless magnetic touch swiping (only 25px flick required)
-  const handleTouchStart = (e) => {
-    if (fullscreenReel) return;
-    touchStartY.current = e.touches[0].clientY;
-  };
+    if (isAutoSettling.current) return;
 
-  const handleTouchEnd = (e) => {
-    if (fullscreenReel) return;
-    if (isFeedScrolling.current) return;
-    const touchEndY = e.changedTouches[0].clientY;
-    const diff = touchStartY.current - touchEndY;
-    const SWIPE_THRESHOLD = 25;
+    clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => {
+      if (!feedContainerRef.current) return;
+      const restTop = feedContainerRef.current.scrollTop;
+      const dir = scrollDirection.current;
 
-    if (diff > SWIPE_THRESHOLD && activeIndex < REELS.length - 1) {
-      isFeedScrolling.current = true;
-      const nextIdx = activeIndex + 1;
-      setActiveIndex(nextIdx);
-      reelRefs.current[nextIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
-      setTimeout(() => { isFeedScrolling.current = false; }, 380);
-    } else if (diff < -SWIPE_THRESHOLD && activeIndex > 0) {
-      isFeedScrolling.current = true;
-      const prevIdx = activeIndex - 1;
-      setActiveIndex(prevIdx);
-      reelRefs.current[prevIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
-      setTimeout(() => { isFeedScrolling.current = false; }, 380);
-    }
-  };
+      for (let i = 0; i < reelRefs.current.length; i++) {
+        const el = reelRefs.current[i];
+        if (!el) continue;
+        const targetTop = el.offsetTop;
+        const dist = targetTop - restTop; // positive = card is below current scroll
+        const absDist = Math.abs(dist);
 
-  // Keyboard arrow keys for effortless feed navigation
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (fullscreenReel || sheetOpen) return;
-      if (e.key === "ArrowDown" || e.key === "PageDown") {
-        e.preventDefault();
-        if (activeIndex < REELS.length - 1) {
-          const nextIdx = activeIndex + 1;
-          setActiveIndex(nextIdx);
-          reelRefs.current[nextIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      } else if (e.key === "ArrowUp" || e.key === "PageUp") {
-        e.preventDefault();
-        if (activeIndex > 0) {
-          const prevIdx = activeIndex - 1;
-          setActiveIndex(prevIdx);
-          reelRefs.current[prevIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (absDist < 3) break;
+
+        // Soft magnetic capture zone:
+        // - Within 45px either way, OR
+        // - Within 95px ahead in the direction the user was scrolling (never pulls backward!)
+        const isAheadInScrollDir = (dir > 0 && dist > 0 && dist <= 95) || (dir < 0 && dist < 0 && absDist <= 95);
+        if (absDist <= 45 || isAheadInScrollDir) {
+          isAutoSettling.current = true;
+          feedContainerRef.current.scrollTo({ top: targetTop, behavior: "smooth" });
+          setTimeout(() => {
+            isAutoSettling.current = false;
+          }, 260);
+          break;
         }
       }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeIndex, fullscreenReel, sheetOpen]);
+    }, 150);
+  }, [fullscreenReel]);
 
   const pickCategory = (cat) => {
     setActiveCategory(cat);
@@ -212,20 +174,18 @@ export default function Home() {
             </div>
           )}
 
-          {/* Feed — iPhone-style Magnetic Scroll Container */}
+          {/* Feed — Butter-smooth native scroll with subtle settled magnetism */}
           <div
             ref={feedContainerRef}
-            onWheel={handleFeedWheel}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-            className="flex-1 overflow-y-auto snap-y snap-mandatory scroll-smooth overscroll-contain scrollbar-none pb-28"
+            onScroll={handleFeedScroll}
+            className="flex-1 overflow-y-auto overscroll-y-contain scrollbar-none pb-28"
           >
             {REELS.map((reel, i) => (
               <div
                 key={reel.id}
                 ref={(el) => (reelRefs.current[i] = el)}
                 data-index={i}
-                className="relative snap-start snap-always flex flex-col bg-white transition-transform duration-300"
+                className="relative flex flex-col bg-white"
               >
                 <div onClick={() => setFullscreenReel(reel)} className="cursor-pointer">
                   <ReelCard reel={reel} isActive={activeIndex === i && !fullscreenReel} isFeedMode={true} />

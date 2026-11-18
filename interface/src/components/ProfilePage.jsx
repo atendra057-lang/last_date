@@ -38,9 +38,9 @@ export default function ProfilePage({ onBack, onSettings }) {
     clearTimeout(wheelTimeout.current);
     wheelTimeout.current = setTimeout(() => {
       wheelAccumulator.current = 0;
-    }, 140);
+    }, 120);
 
-    const THRESHOLD = 16;
+    const THRESHOLD = 35;
     if (!isScrolledUp) {
       if (wheelAccumulator.current > THRESHOLD) {
         isScrolling.current = true;
@@ -60,8 +60,8 @@ export default function ProfilePage({ onBack, onSettings }) {
 
   const handleDragEnd = (e, { offset, velocity }) => {
     if (isEditModalOpen) return;
-    const swipeThreshold = 25;
-    const velocityThreshold = 70;
+    const swipeThreshold = 35;
+    const velocityThreshold = 120;
 
     if (!isScrolledUp) {
       if (offset.y < -swipeThreshold || velocity.y < -velocityThreshold) {
@@ -161,14 +161,14 @@ export default function ProfilePage({ onBack, onSettings }) {
         </button>
       </motion.div>
 
-      {/* Scrollable Content Wrapper — iPhone Magnetic Physics */}
+      {/* Scrollable Content Wrapper */}
       <motion.div
-        className="relative z-10 w-full h-[200vh] cursor-grab active:cursor-grabbing"
+        className="relative z-10 w-full h-[200vh] will-change-transform"
         animate={{ y: isScrolledUp ? "-100vh" : "0vh" }}
-        transition={{ type: "spring", damping: 30, stiffness: 300, mass: 0.8 }}
-        drag="y"
+        transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1] }}
+        drag={isScrolledUp ? false : "y"}
         dragConstraints={{ top: 0, bottom: 0 }}
-        dragElastic={0.65}
+        dragElastic={0.4}
         onDragEnd={handleDragEnd}
         onWheel={handleWheel}
       >

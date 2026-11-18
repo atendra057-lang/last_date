@@ -7,20 +7,11 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
  *   src        — video URL (mp4, webm, etc.)
  *   poster     — optional poster/thumbnail image URL
  *   isActive   — whether this reel is the currently visible one (controls autoplay)
- *
- * Features:
- *   • Autoplay when active, pause when offscreen
- *   • Muted by default (browser autoplay policy)
- *   • Loop
- *   • playsInline (critical for iOS)
- *   • object-fit: cover (fills the 9:16 frame, crops overflow)
- *   • Tap to pause/play
- *   • Thin progress bar at the bottom
  */
 export default function ReelPlayer({ src, poster, isActive = true }) {
   const videoRef = useRef(null);
+  const progressBarRef = useRef(null);
   const [paused, setPaused] = useState(false);
-  const [progress, setProgress] = useState(0);
 
   // Autoplay / pause based on visibility
   useEffect(() => {
@@ -28,31 +19,36 @@ export default function ReelPlayer({ src, poster, isActive = true }) {
     if (!video) return;
 
     if (isActive) {
-      video.play().catch(() => { });
+      video.play().catch(() => {});
       setPaused(false);
     } else {
       video.pause();
       video.currentTime = 0;
       setPaused(false);
+      if (progressBarRef.current) {
+        progressBarRef.current.style.transform = "scaleX(0)";
+      }
     }
   }, [isActive]);
 
-  // Progress bar — updates every animation frame for smoothness
+  // Zero-re-render progress bar — mutates DOM style directly via ref only while active
   useEffect(() => {
+    if (!isActive) return;
     const video = videoRef.current;
     if (!video) return;
 
     let rafId;
     const tick = () => {
-      if (video.duration) {
-        setProgress(video.currentTime / video.duration);
+      if (video.duration && progressBarRef.current) {
+        const ratio = video.currentTime / video.duration;
+        progressBarRef.current.style.transform = `scaleX(${ratio})`;
       }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
 
     return () => cancelAnimationFrame(rafId);
-  }, []);
+  }, [isActive]);
 
   // Tap to pause / resume
   const handleTap = useCallback(() => {
@@ -60,7 +56,7 @@ export default function ReelPlayer({ src, poster, isActive = true }) {
     if (!video) return;
 
     if (video.paused) {
-      video.play().catch(() => { });
+      video.play().catch(() => {});
       setPaused(false);
     } else {
       video.pause();
@@ -82,7 +78,7 @@ export default function ReelPlayer({ src, poster, isActive = true }) {
         muted
         loop
         playsInline
-        preload="auto"
+        preload={isActive ? "auto" : "metadata"}
         className="absolute inset-0 w-full h-full object-cover"
       />
 
@@ -104,11 +100,12 @@ export default function ReelPlayer({ src, poster, isActive = true }) {
         </div>
       </div>
 
-      {/* Bottom progress bar */}
-      <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/20 z-10">
+      {/* Bottom progress bar (GPU-composited scaleX, zero React re-renders) */}
+      <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/20 z-10 overflow-hidden">
         <div
-          className="h-full bg-white rounded-full transition-none"
-          style={{ width: `${progress * 100}%` }}
+          ref={progressBarRef}
+          className="h-full w-full bg-white origin-left will-change-transform"
+          style={{ transform: "scaleX(0)" }}
         />
       </div>
     </div>

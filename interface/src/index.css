@@ -15,12 +15,10 @@
   --font-mono: "JetBrains Mono", monospace;
 }
 
-/* iOS-style Magnetic Scroll & Touch Physics */
 html, body {
   background-color: var(--color-ink);
   color: var(--color-bone);
   font-family: var(--font-body);
-  scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
 }
@@ -32,13 +30,4 @@ html, body {
 }
 .scrollbar-none::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
-}
-
-/* CSS Scroll Snapping Utilities with Magnetic Lock */
-.snap-y {
-  scroll-snap-type: y mandatory;
-}
-
-.snap-always {
-  scroll-snap-stop: always;
 }

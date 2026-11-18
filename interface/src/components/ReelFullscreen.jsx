@@ -1,17 +1,15 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart, MessageCircle, Send, Bookmark, Music2, X } from "lucide-react";
 
 /**
- * ReelFullscreen — Instagram-style full-screen reel overlay with vertical scrolling.
+ * ReelFullscreen — Instagram-style full-screen reel overlay with native GPU-composited vertical scrolling.
  */
 export default function ReelFullscreen({ reels, initialReelId, onClose }) {
-  const [activeIndex, setActiveIndex] = useState(
-    Math.max(0, reels.findIndex((r) => r.id === initialReelId))
-  );
-  const isScrolling = useRef(false);
-  const wheelAccumulator = useRef(0);
-  const wheelTimeout = useRef(null);
+  const initialIndex = Math.max(0, reels.findIndex((r) => r.id === initialReelId));
+  const [activeIndex, setActiveIndex] = useState(initialIndex);
+  const containerRef = useRef(null);
+  const itemRefs = useRef([]);
 
   // Lock body scroll while open
   useEffect(() => {
@@ -19,59 +17,48 @@ export default function ReelFullscreen({ reels, initialReelId, onClose }) {
     return () => { document.body.style.overflow = ""; };
   }, []);
 
-  // Effortless, low-friction magnetic wheel scrolling for Chrome & trackpads
-  const handleWheel = useCallback((e) => {
-    if (isScrolling.current) return;
-
-    wheelAccumulator.current += e.deltaY;
-    clearTimeout(wheelTimeout.current);
-    wheelTimeout.current = setTimeout(() => {
-      wheelAccumulator.current = 0;
-    }, 140);
-
-    const THRESHOLD = 16; // Low threshold so even a gentle flick snaps effortlessly
-    if (wheelAccumulator.current > THRESHOLD) {
-      if (activeIndex < reels.length - 1) {
-        isScrolling.current = true;
-        wheelAccumulator.current = 0;
-        setActiveIndex((prev) => prev + 1);
-        setTimeout(() => { isScrolling.current = false; }, 380);
-      }
-    } else if (wheelAccumulator.current < -THRESHOLD) {
-      if (activeIndex > 0) {
-        isScrolling.current = true;
-        wheelAccumulator.current = 0;
-        setActiveIndex((prev) => prev - 1);
-        setTimeout(() => { isScrolling.current = false; }, 380);
-      }
+  // Jump instantly to initial reel before paint
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (container && initialIndex > 0) {
+      container.scrollTop = initialIndex * container.clientHeight;
     }
-  }, [activeIndex, reels.length]);
+  }, [initialIndex]);
 
-  // Magnetic drag handling: effortless swipe with low threshold & fluid elasticity
-  const handleDragEnd = (e, { offset, velocity }) => {
-    const swipeThreshold = 25; // Only 25px swipe needed (no long swipe required!)
-    const velocityThreshold = 70; // Low flick velocity to snap magnetically
+  // Track active reel via IntersectionObserver (zero scroll-thread lag)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-    if (offset.y < -swipeThreshold || velocity.y < -velocityThreshold) {
-      if (activeIndex < reels.length - 1) {
-        setActiveIndex((prev) => prev + 1);
-      }
-    } else if (offset.y > swipeThreshold || velocity.y > velocityThreshold) {
-      if (activeIndex > 0) {
-        setActiveIndex((prev) => prev - 1);
-      }
-    }
-  };
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const idx = Number(entry.target.dataset.index);
+            setActiveIndex(idx);
+          }
+        });
+      },
+      { root: container, threshold: 0.6 }
+    );
+
+    itemRefs.current.forEach((el) => {
+      if (el) observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, [reels.length]);
 
   // Keyboard navigation for desktop Chrome
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "ArrowDown" || e.key === "PageDown") {
         e.preventDefault();
-        if (activeIndex < reels.length - 1) setActiveIndex((prev) => prev + 1);
+        const nextIdx = Math.min(reels.length - 1, activeIndex + 1);
+        itemRefs.current[nextIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
       } else if (e.key === "ArrowUp" || e.key === "PageUp") {
         e.preventDefault();
-        if (activeIndex > 0) setActiveIndex((prev) => prev - 1);
+        const prevIdx = Math.max(0, activeIndex - 1);
+        itemRefs.current[prevIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
       } else if (e.key === "Escape") {
         onClose();
       }
@@ -82,10 +69,10 @@ export default function ReelFullscreen({ reels, initialReelId, onClose }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 50 }}
+      initial={{ opacity: 0, y: 40 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 50 }}
-      transition={{ type: "spring", damping: 28, stiffness: 320 }}
+      exit={{ opacity: 0, y: 40 }}
+      transition={{ duration: 0.22, ease: "easeOut" }}
       className="fixed inset-0 z-[999] bg-black flex flex-col overflow-hidden select-none"
     >
       {/* ── HEADER ── */}
@@ -100,32 +87,24 @@ export default function ReelFullscreen({ reels, initialReelId, onClose }) {
         </button>
       </div>
 
-      {/* ── MAGNETIC SCROLL CONTAINER (iPhone-style spring & drag) ── */}
+      {/* ── NATIVE GPU-COMPOSITED SCROLL CONTAINER (Instagram-style 120fps snap) ── */}
       <div
-        className="flex-1 w-full h-full relative touch-none overscroll-contain"
-        onWheel={handleWheel}
+        ref={containerRef}
+        className="flex-1 w-full h-full overflow-y-auto snap-y snap-mandatory overscroll-y-contain scrollbar-none"
       >
-        <motion.div
-          drag="y"
-          dragConstraints={{ top: 0, bottom: 0 }}
-          dragElastic={0.65}
-          onDragEnd={handleDragEnd}
-          animate={{ y: `-${activeIndex * 100}%` }}
-          transition={{ type: "spring", damping: 30, stiffness: 300, mass: 0.8 }}
-          className="w-full h-full cursor-grab active:cursor-grabbing"
-        >
-          {reels.map((reel, i) => (
-            <div
-              key={reel.id}
-              className="w-full h-full relative shrink-0"
-            >
-              <FullscreenReelItem reel={reel} isActive={activeIndex === i} />
-            </div>
-          ))}
-        </motion.div>
+        {reels.map((reel, i) => (
+          <div
+            key={reel.id}
+            ref={(el) => (itemRefs.current[i] = el)}
+            data-index={i}
+            className="w-full h-full relative shrink-0 snap-start snap-always"
+          >
+            <FullscreenReelItem reel={reel} isActive={activeIndex === i} />
+          </div>
+        ))}
       </div>
 
-      {/* ── MAGNETIC SLIDE INDICATOR (Subtle iPhone-style pills) ── */}
+      {/* ── SLIDE INDICATOR ── */}
       {reels.length > 1 && (
         <div className="absolute right-1.5 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-1.5 pointer-events-none">
           {reels.map((_, idx) => (
@@ -146,8 +125,8 @@ export default function ReelFullscreen({ reels, initialReelId, onClose }) {
 
 function FullscreenReelItem({ reel, isActive }) {
   const videoRef = useRef(null);
+  const progressBarRef = useRef(null);
   const [paused, setPaused] = useState(!isActive);
-  const [progress, setProgress] = useState(0);
   const [liked, setLiked] = useState(false);
   const [following, setFollowing] = useState(false);
   const [burst, setBurst] = useState(false);
@@ -159,15 +138,18 @@ function FullscreenReelItem({ reel, isActive }) {
     if (!video) return;
 
     if (isActive) {
-      video.play().catch(() => { });
+      video.play().catch(() => {});
       setPaused(false);
     } else {
       video.pause();
       setPaused(true);
+      if (progressBarRef.current) {
+        progressBarRef.current.style.transform = "scaleX(0)";
+      }
     }
   }, [isActive]);
 
-  // Progress Bar tracking (only when active)
+  // Zero-re-render progress bar tracking (mutates DOM style via ref only when active)
   useEffect(() => {
     if (!isActive) return;
     const video = videoRef.current;
@@ -175,7 +157,10 @@ function FullscreenReelItem({ reel, isActive }) {
 
     let rafId;
     const tick = () => {
-      if (video.duration) setProgress(video.currentTime / video.duration);
+      if (video.duration && progressBarRef.current) {
+        const ratio = video.currentTime / video.duration;
+        progressBarRef.current.style.transform = `scaleX(${ratio})`;
+      }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
@@ -183,7 +168,7 @@ function FullscreenReelItem({ reel, isActive }) {
     return () => cancelAnimationFrame(rafId);
   }, [isActive]);
 
-  const handleTap = useCallback((e) => {
+  const handleTap = useCallback(() => {
     // double-tap = like
     const now = Date.now();
     if (now - lastTap.current < 280) {
@@ -197,7 +182,7 @@ function FullscreenReelItem({ reel, isActive }) {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      video.play().catch(() => { });
+      video.play().catch(() => {});
       setPaused(false);
     } else {
       video.pause();
@@ -216,7 +201,7 @@ function FullscreenReelItem({ reel, isActive }) {
         muted
         loop
         playsInline
-        preload="auto"
+        preload={isActive ? "auto" : "metadata"}
         className="absolute inset-0 w-full h-full object-cover"
       />
 
@@ -327,11 +312,12 @@ function FullscreenReelItem({ reel, isActive }) {
         <RailIcon Icon={Bookmark} label="Save" />
       </div>
 
-      {/* ── PROGRESS BAR ── */}
-      <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/20 z-40">
+      {/* ── PROGRESS BAR (GPU-composited scaleX, zero React re-renders) ── */}
+      <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/20 z-40 overflow-hidden">
         <div
-          className="h-full bg-white rounded-full transition-none"
-          style={{ width: `${progress * 100}%` }}
+          ref={progressBarRef}
+          className="h-full w-full bg-white origin-left will-change-transform"
+          style={{ transform: "scaleX(0)" }}
         />
       </div>
     </div>
