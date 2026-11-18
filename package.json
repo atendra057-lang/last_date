@@ -1,0 +1,13 @@
+{
+  "name": "social-media",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "npm --prefix interface install",
+    "build": "npm --prefix interface run build",
+    "dev": "npm --prefix interface run dev",
+    "preview": "npm --prefix interface run preview",
+    "lint": "npm --prefix interface run lint"
+  }
+}
