@@ -28,33 +28,48 @@ export default function ProfilePage({ onBack, onSettings }) {
   const avatarInputRef = useRef(null);
   const bgInputRef = useRef(null);
 
+  const wheelAccumulator = useRef(0);
+  const wheelTimeout = useRef(null);
+
   const handleWheel = (e) => {
     if (isScrolling.current || isEditModalOpen) return;
 
+    wheelAccumulator.current += e.deltaY;
+    clearTimeout(wheelTimeout.current);
+    wheelTimeout.current = setTimeout(() => {
+      wheelAccumulator.current = 0;
+    }, 140);
+
+    const THRESHOLD = 16;
     if (!isScrolledUp) {
-      if (e.deltaY > 20) {
+      if (wheelAccumulator.current > THRESHOLD) {
         isScrolling.current = true;
+        wheelAccumulator.current = 0;
         setIsScrolledUp(true);
-        setTimeout(() => { isScrolling.current = false; }, 600);
+        setTimeout(() => { isScrolling.current = false; }, 380);
       }
     } else {
-      if (e.deltaY < -20 && scrollRef.current && scrollRef.current.scrollTop <= 0) {
+      if (wheelAccumulator.current < -THRESHOLD && scrollRef.current && scrollRef.current.scrollTop <= 0) {
         isScrolling.current = true;
+        wheelAccumulator.current = 0;
         setIsScrolledUp(false);
-        setTimeout(() => { isScrolling.current = false; }, 600);
+        setTimeout(() => { isScrolling.current = false; }, 380);
       }
     }
   };
 
   const handleDragEnd = (e, { offset, velocity }) => {
     if (isEditModalOpen) return;
+    const swipeThreshold = 25;
+    const velocityThreshold = 70;
+
     if (!isScrolledUp) {
-      if (offset.y < -50 || velocity.y < -300) {
+      if (offset.y < -swipeThreshold || velocity.y < -velocityThreshold) {
         setIsScrolledUp(true);
       }
     } else {
       if (scrollRef.current && scrollRef.current.scrollTop <= 0) {
-        if (offset.y > 50 || velocity.y > 300) {
+        if (offset.y > swipeThreshold || velocity.y > velocityThreshold) {
           setIsScrolledUp(false);
         }
       }
@@ -146,13 +161,14 @@ export default function ProfilePage({ onBack, onSettings }) {
         </button>
       </motion.div>
 
-      {/* Scrollable Content Wrapper */}
+      {/* Scrollable Content Wrapper — iPhone Magnetic Physics */}
       <motion.div
-        className="relative z-10 w-full h-[200vh]"
+        className="relative z-10 w-full h-[200vh] cursor-grab active:cursor-grabbing"
         animate={{ y: isScrolledUp ? "-100vh" : "0vh" }}
-        transition={{ type: "spring", damping: 25, stiffness: 300 }}
+        transition={{ type: "spring", damping: 30, stiffness: 300, mass: 0.8 }}
         drag="y"
         dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={0.65}
         onDragEnd={handleDragEnd}
         onWheel={handleWheel}
       >

@@ -10,6 +10,8 @@ export default function ReelFullscreen({ reels, initialReelId, onClose }) {
     Math.max(0, reels.findIndex((r) => r.id === initialReelId))
   );
   const isScrolling = useRef(false);
+  const wheelAccumulator = useRef(0);
+  const wheelTimeout = useRef(null);
 
   // Lock body scroll while open
   useEffect(() => {
@@ -17,42 +19,78 @@ export default function ReelFullscreen({ reels, initialReelId, onClose }) {
     return () => { document.body.style.overflow = ""; };
   }, []);
 
-  const handleWheel = (e) => {
+  // Effortless, low-friction magnetic wheel scrolling for Chrome & trackpads
+  const handleWheel = useCallback((e) => {
     if (isScrolling.current) return;
-    if (e.deltaY > 30) {
+
+    wheelAccumulator.current += e.deltaY;
+    clearTimeout(wheelTimeout.current);
+    wheelTimeout.current = setTimeout(() => {
+      wheelAccumulator.current = 0;
+    }, 140);
+
+    const THRESHOLD = 16; // Low threshold so even a gentle flick snaps effortlessly
+    if (wheelAccumulator.current > THRESHOLD) {
       if (activeIndex < reels.length - 1) {
         isScrolling.current = true;
-        setActiveIndex(prev => prev + 1);
-        setTimeout(() => { isScrolling.current = false; }, 600);
+        wheelAccumulator.current = 0;
+        setActiveIndex((prev) => prev + 1);
+        setTimeout(() => { isScrolling.current = false; }, 380);
       }
-    } else if (e.deltaY < -30) {
+    } else if (wheelAccumulator.current < -THRESHOLD) {
       if (activeIndex > 0) {
         isScrolling.current = true;
-        setActiveIndex(prev => prev - 1);
-        setTimeout(() => { isScrolling.current = false; }, 600);
+        wheelAccumulator.current = 0;
+        setActiveIndex((prev) => prev - 1);
+        setTimeout(() => { isScrolling.current = false; }, 380);
+      }
+    }
+  }, [activeIndex, reels.length]);
+
+  // Magnetic drag handling: effortless swipe with low threshold & fluid elasticity
+  const handleDragEnd = (e, { offset, velocity }) => {
+    const swipeThreshold = 25; // Only 25px swipe needed (no long swipe required!)
+    const velocityThreshold = 70; // Low flick velocity to snap magnetically
+
+    if (offset.y < -swipeThreshold || velocity.y < -velocityThreshold) {
+      if (activeIndex < reels.length - 1) {
+        setActiveIndex((prev) => prev + 1);
+      }
+    } else if (offset.y > swipeThreshold || velocity.y > velocityThreshold) {
+      if (activeIndex > 0) {
+        setActiveIndex((prev) => prev - 1);
       }
     }
   };
 
-  const handleDragEnd = (e, { offset, velocity }) => {
-    if (offset.y < -50 || velocity.y < -300) {
-      if (activeIndex < reels.length - 1) setActiveIndex(prev => prev + 1);
-    } else if (offset.y > 50 || velocity.y > 300) {
-      if (activeIndex > 0) setActiveIndex(prev => prev - 1);
-    }
-  };
+  // Keyboard navigation for desktop Chrome
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "ArrowDown" || e.key === "PageDown") {
+        e.preventDefault();
+        if (activeIndex < reels.length - 1) setActiveIndex((prev) => prev + 1);
+      } else if (e.key === "ArrowUp" || e.key === "PageUp") {
+        e.preventDefault();
+        if (activeIndex > 0) setActiveIndex((prev) => prev - 1);
+      } else if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeIndex, reels.length, onClose]);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 50 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 50 }}
-      transition={{ type: "spring", damping: 25, stiffness: 300 }}
-      className="fixed inset-0 z-[999] bg-black flex flex-col overflow-hidden"
+      transition={{ type: "spring", damping: 28, stiffness: 320 }}
+      className="fixed inset-0 z-[999] bg-black flex flex-col overflow-hidden select-none"
     >
       {/* ── HEADER ── */}
-      <div className="absolute top-0 left-0 right-0 z-50 flex justify-between items-center p-4 bg-gradient-to-b from-black/50 to-transparent pointer-events-none">
-        <span className="text-white font-bold text-lg pointer-events-auto">Reels</span>
+      <div className="absolute top-0 left-0 right-0 z-50 flex justify-between items-center p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
+        <span className="text-white font-bold text-lg pointer-events-auto drop-shadow-md">Reels</span>
         <button
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           className="w-9 h-9 rounded-full bg-black/40 backdrop-blur-md border border-white/20
@@ -62,18 +100,19 @@ export default function ReelFullscreen({ reels, initialReelId, onClose }) {
         </button>
       </div>
 
-      {/* ── SCROLL CONTAINER ── */}
+      {/* ── MAGNETIC SCROLL CONTAINER (iPhone-style spring & drag) ── */}
       <div
-        className="flex-1 w-full h-full relative touch-none"
+        className="flex-1 w-full h-full relative touch-none overscroll-contain"
         onWheel={handleWheel}
       >
         <motion.div
           drag="y"
           dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={0.65}
           onDragEnd={handleDragEnd}
           animate={{ y: `-${activeIndex * 100}%` }}
-          transition={{ type: "spring", damping: 28, stiffness: 200 }}
-          className="w-full h-full"
+          transition={{ type: "spring", damping: 30, stiffness: 300, mass: 0.8 }}
+          className="w-full h-full cursor-grab active:cursor-grabbing"
         >
           {reels.map((reel, i) => (
             <div
@@ -85,6 +124,22 @@ export default function ReelFullscreen({ reels, initialReelId, onClose }) {
           ))}
         </motion.div>
       </div>
+
+      {/* ── MAGNETIC SLIDE INDICATOR (Subtle iPhone-style pills) ── */}
+      {reels.length > 1 && (
+        <div className="absolute right-1.5 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-1.5 pointer-events-none">
+          {reels.map((_, idx) => (
+            <div
+              key={idx}
+              className={`w-1 rounded-full transition-all duration-300 ${
+                activeIndex === idx
+                  ? "h-4 bg-white shadow-sm"
+                  : "h-1 bg-white/30"
+              }`}
+            />
+          ))}
+        </div>
+      )}
     </motion.div>
   );
 }

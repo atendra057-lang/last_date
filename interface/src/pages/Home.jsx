@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   MoreHorizontal, X, Sparkles, Laugh, HeartHandshake, Landmark, ChefHat,
@@ -68,6 +68,11 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const reelRefs = useRef([]);
+  const feedContainerRef = useRef(null);
+  const isFeedScrolling = useRef(false);
+  const feedAccumulator = useRef(0);
+  const feedTimeout = useRef(null);
+  const touchStartY = useRef(0);
   const activeReel = REELS.find((r) => r.id === activeReasonId);
 
   // IntersectionObserver — play only when reel is ≥70% visible
@@ -81,11 +86,96 @@ export default function Home() {
           }
         });
       },
-      { threshold: 0.7 }
+      { threshold: 0.6 }
     );
     reelRefs.current.forEach((el) => { if (el) observer.observe(el); });
     return () => observer.disconnect();
   }, []);
+
+  // Effortless magnetic wheel scrolling for Chrome: single flick glides to next reel
+  const handleFeedWheel = useCallback((e) => {
+    if (fullscreenReel) return;
+    if (isFeedScrolling.current) return;
+
+    feedAccumulator.current += e.deltaY;
+    clearTimeout(feedTimeout.current);
+    feedTimeout.current = setTimeout(() => {
+      feedAccumulator.current = 0;
+    }, 140);
+
+    const THRESHOLD = 16;
+    if (feedAccumulator.current > THRESHOLD) {
+      if (activeIndex < REELS.length - 1) {
+        isFeedScrolling.current = true;
+        feedAccumulator.current = 0;
+        const nextIdx = activeIndex + 1;
+        setActiveIndex(nextIdx);
+        reelRefs.current[nextIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setTimeout(() => { isFeedScrolling.current = false; }, 380);
+      }
+    } else if (feedAccumulator.current < -THRESHOLD) {
+      if (activeIndex > 0) {
+        isFeedScrolling.current = true;
+        feedAccumulator.current = 0;
+        const prevIdx = activeIndex - 1;
+        setActiveIndex(prevIdx);
+        reelRefs.current[prevIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setTimeout(() => { isFeedScrolling.current = false; }, 380);
+      }
+    }
+  }, [activeIndex, fullscreenReel]);
+
+  // Effortless magnetic touch swiping (only 25px flick required)
+  const handleTouchStart = (e) => {
+    if (fullscreenReel) return;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e) => {
+    if (fullscreenReel) return;
+    if (isFeedScrolling.current) return;
+    const touchEndY = e.changedTouches[0].clientY;
+    const diff = touchStartY.current - touchEndY;
+    const SWIPE_THRESHOLD = 25;
+
+    if (diff > SWIPE_THRESHOLD && activeIndex < REELS.length - 1) {
+      isFeedScrolling.current = true;
+      const nextIdx = activeIndex + 1;
+      setActiveIndex(nextIdx);
+      reelRefs.current[nextIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setTimeout(() => { isFeedScrolling.current = false; }, 380);
+    } else if (diff < -SWIPE_THRESHOLD && activeIndex > 0) {
+      isFeedScrolling.current = true;
+      const prevIdx = activeIndex - 1;
+      setActiveIndex(prevIdx);
+      reelRefs.current[prevIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setTimeout(() => { isFeedScrolling.current = false; }, 380);
+    }
+  };
+
+  // Keyboard arrow keys for effortless feed navigation
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (fullscreenReel || sheetOpen) return;
+      if (e.key === "ArrowDown" || e.key === "PageDown") {
+        e.preventDefault();
+        if (activeIndex < REELS.length - 1) {
+          const nextIdx = activeIndex + 1;
+          setActiveIndex(nextIdx);
+          reelRefs.current[nextIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      } else if (e.key === "ArrowUp" || e.key === "PageUp") {
+        e.preventDefault();
+        if (activeIndex > 0) {
+          const prevIdx = activeIndex - 1;
+          setActiveIndex(prevIdx);
+          reelRefs.current[prevIdx]?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeIndex, fullscreenReel, sheetOpen]);
 
   const pickCategory = (cat) => {
     setActiveCategory(cat);
@@ -122,14 +212,20 @@ export default function Home() {
             </div>
           )}
 
-          {/* Feed */}
-          <div className="flex-1 overflow-y-auto snap-y snap-mandatory scrollbar-none pb-28">
+          {/* Feed — iPhone-style Magnetic Scroll Container */}
+          <div
+            ref={feedContainerRef}
+            onWheel={handleFeedWheel}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            className="flex-1 overflow-y-auto snap-y snap-mandatory scroll-smooth overscroll-contain scrollbar-none pb-28"
+          >
             {REELS.map((reel, i) => (
               <div
                 key={reel.id}
                 ref={(el) => (reelRefs.current[i] = el)}
                 data-index={i}
-                className="relative snap-start flex flex-col bg-white"
+                className="relative snap-start snap-always flex flex-col bg-white transition-transform duration-300"
               >
                 <div onClick={() => setFullscreenReel(reel)} className="cursor-pointer">
                   <ReelCard reel={reel} isActive={activeIndex === i && !fullscreenReel} isFeedMode={true} />

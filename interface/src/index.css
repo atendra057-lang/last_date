@@ -1,7 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap');
 @import "tailwindcss";
 
-
 @theme {
   --color-ink: #F4F5F8;
   --color-surface: #FFFFFF;
@@ -16,8 +15,30 @@
   --font-mono: "JetBrains Mono", monospace;
 }
 
-body {
+/* iOS-style Magnetic Scroll & Touch Physics */
+html, body {
   background-color: var(--color-ink);
   color: var(--color-bone);
   font-family: var(--font-body);
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* Cross-browser scrollbar hiding */
+.scrollbar-none {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* CSS Scroll Snapping Utilities with Magnetic Lock */
+.snap-y {
+  scroll-snap-type: y mandatory;
+}
+
+.snap-always {
+  scroll-snap-stop: always;
 }
